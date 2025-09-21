@@ -16,11 +16,24 @@ Timer Pomodoro yang ringan dan bebas gangguan, dibangun secara native untuk macO
 
 - Minimal & Fokus: Antarmuka yang bersih dan bebas dari gangguan, membantu Anda tetap fokus pada pekerjaan.
 
-- Siklus Otomatis: Secara otomatis beralih antara sesi fokus (25 menit), istirahat pendek (5 menit), dan istirahat panjang (15 menit) setelah beberapa siklus.
-
 - Notifikasi Sistem: Pemberitahuan native macOS akan muncul saat sesi timer berakhir.
 
 - Ringan dan Efisien: Konsumsi sumber daya yang sangat rendah karena berjalan secara native.
+- ada fitur suara hujan yang akan auto play ketika sesi dimulai
+- ada fitu setting untuk memilih sesi 25/5 atau 50/10.
+
+# Getting Started
+## compiled
+Run:
+```console
+make 
+```
+## run
+Run:
+```console
+open PomodoroTimer.app
+```
+
 
 
 
