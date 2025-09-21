@@ -34,7 +34,7 @@
   // === Konfigurasi awal ===
   self.isWorkSession = YES; // Mulai dengan work session
   self.isRunning = NO;
-  self.totalSeconds = 25 * 60; // 25 menit
+  self.totalSeconds = 1 * 60; // 25 menit
   self.remainingSeconds = self.totalSeconds;
 
   // === Buat window ===
@@ -212,13 +212,13 @@
 
   [self.window beginSheet:self.settingsWindow completionHandler:nil];
 }
-#pragma save setting
+
 - (void)saveSetting {
   NSString *selected = self.sessionSelector.titleOfSelectedItem;
 
   if ([selected isEqualToString:@"25 / 5"]) {
-    self.workDuration = 25 * 60;
-    self.breakDuration = 5 * 60;
+    self.workDuration = 1 * 60; // Testing: 1 menit
+    self.breakDuration = 30;    // Testing: 30 detik (0.5 * 60 = 30)
   } else if ([selected isEqualToString:@"50 / 10"]) {
     self.workDuration = 50 * 60;
     self.breakDuration = 10 * 60;
@@ -233,42 +233,13 @@
   [self.progressBar setMaxValue:(double)self.totalSeconds];
   [self.progressBar setDoubleValue:(double)self.remainingSeconds];
 
-  NSLog(@"Setting saved: %@", selected);
-
+  NSLog(@"Setting saved: %@ - Work: %ld seconds, Break: %ld seconds", selected,
+        (long)self.workDuration, (long)self.breakDuration);
   [self.window endSheet:self.settingsWindow];
 }
-
 #pragma closeModal
 - (void)closeSettingModal {
   [self.window endSheet:self.settingsWindow];
-}
-
-#pragma change session mode
-- (void)changeSessionMode:(NSPopUpButton *)sender {
-  NSString *selected = sender.titleOfSelectedItem;
-
-  if ([selected isEqualToString:@"25 / 5"]) {
-    self.workDuration = 25 * 60;
-    self.breakDuration = 5 * 60;
-  } else if ([selected isEqualToString:@"50 / 10"]) {
-    self.workDuration = 50 * 60;
-    self.breakDuration = 10 * 60;
-  }
-
-  // reset timer ke mode baru
-  self.isWorkSession = YES;
-  self.totalSeconds = self.workDuration;
-  self.remainingSeconds = self.totalSeconds;
-
-  [self.timeLabel setStringValue:[self formatTime:self.remainingSeconds]];
-  [self.progressBar setMaxValue:(double)self.totalSeconds];
-  [self.progressBar setDoubleValue:(double)self.remainingSeconds];
-
-  NSString *title =
-      [NSString stringWithFormat:@"Pomodor Timer - Work (%@)", selected];
-  [self.window setTitle:title];
-
-  NSLog(@"Session mode change to %@", selected);
 }
 
 #pragma mark - Rain Sound Setup
@@ -299,6 +270,12 @@
   if (self.isRunning)
     return;
 
+  // pastikan timer sebelumnya dibersihkan
+  if (self.timer) {
+    [self.timer invalidate];
+    self.timer = nil;
+  }
+
   self.isRunning = YES;
   [self.startButton setEnabled:NO];
   [self.pauseButton setEnabled:YES];
@@ -315,11 +292,19 @@
     NSLog(@"Rain sound started...");
   }
 
-  self.timer = [NSTimer scheduledTimerWithTimeInterval:1.0
-                                                target:self
-                                              selector:@selector(updateTimer)
-                                              userInfo:nil
-                                               repeats:YES];
+  // Buat timer dan tambahkan ke common modes supaya tetap berjalan setelah
+  // modal/during event tracking
+  NSTimer *t = [NSTimer timerWithTimeInterval:1.0
+                                       target:self
+                                     selector:@selector(updateTimer)
+                                     userInfo:nil
+                                      repeats:YES];
+  self.timer = t;
+  [[NSRunLoop mainRunLoop] addTimer:self.timer forMode:NSRunLoopCommonModes];
+
+  [self updateUI];
+  NSLog(@"[startTimer] started (isWorkSession=%@) for %ld seconds",
+        self.isWorkSession ? @"YES" : @"NO", (long)self.remainingSeconds);
 }
 
 - (void)pauseTimer {
@@ -342,49 +327,189 @@
 
 - (void)resetTimer {
   [self pauseTimer];
-  self.remainingSeconds = self.totalSeconds;
+
+  if (self.isWorkSession) {
+    self.totalSeconds = self.workDuration;
+    self.remainingSeconds = self.workDuration;
+    [self.window setTitle:@"Pomodoro Timer - Work"];
+  } else {
+    self.totalSeconds = self.breakDuration;
+    self.remainingSeconds = self.breakDuration;
+    [self.window setTitle:@"Pomodoro Timer - Break"];
+  }
+
   [self.timeLabel setStringValue:[self formatTime:self.remainingSeconds]];
+  [self.progressBar setMaxValue:(double)self.totalSeconds];
   [self.progressBar setDoubleValue:(double)self.remainingSeconds];
-  self.isWorkSession = YES;
-  [self.window setTitle:@"Pomodoro Timer - Work"];
+  [self updateUI];
 }
 
 - (void)updateTimer {
   if (self.remainingSeconds > 0) {
     self.remainingSeconds--;
-    [self.timeLabel setStringValue:[self formatTime:self.remainingSeconds]];
-    [self.progressBar setDoubleValue:(double)self.remainingSeconds];
-  } else {
-    [self.timer invalidate];
-    self.timer = nil;
-    self.isRunning = NO;
+    [self updateUI];
+    return;
+  }
 
-    // Hentikan suara hujan
-    if (self.rainPlayer.isPlaying) {
-      [self.rainPlayer stop];
-      NSLog(@"Rain sound stopped...");
+  // Timer selesai - hentikan timer dan suara
+  [self.timer invalidate];
+  self.timer = nil;
+  self.isRunning = NO;
+
+  // Hentikan suara hujan
+  if (self.rainPlayer.isPlaying) {
+    [self.rainPlayer stop];
+    NSLog(@"Rain sound stopped...");
+  }
+
+  [self.startButton setEnabled:YES];
+  [self.pauseButton setEnabled:NO];
+
+  [self sendNotification];
+
+  // DEBUG: Log nilai sebelum switching
+  NSLog(@"BEFORE SWITCH - workDuration: %ld, breakDuration: %ld, "
+        @"isWorkSession: %@",
+        (long)self.workDuration, (long)self.breakDuration,
+        self.isWorkSession ? @"YES" : @"NO");
+
+  // PERBAIKAN: Logika switching yang lebih jelas
+  if (self.isWorkSession) {
+    // Selesai sesi kerja -> switch ke break session
+    NSLog(@"Work session completed, switching to break session");
+
+    // PASTIKAN breakDuration tidak 0 - set ulang jika perlu
+    if (self.breakDuration == 0) {
+      NSLog(@"WARNING: breakDuration is 0, setting to default 30 seconds");
+      self.breakDuration = 30; // Force set ke 30 detik
     }
 
-    [self.startButton setEnabled:YES];
-    [self.pauseButton setEnabled:NO];
+    self.isWorkSession = NO;
+    self.totalSeconds = self.breakDuration;
+    self.remainingSeconds = self.breakDuration;
 
-    [self sendNotification];
-
-    // Switch antara Work Session dan Break
-    if (self.isWorkSession) {
-      // selesai sesi kerja -> masuk sesi istirahat
-      self.totalSeconds = self.breakDuration;
-      [self.window setTitle:@"Pomodoro timer - Break"];
-    } else {
-      // selesai sesi istirahat -> kembali ke sesi kerja
-      self.totalSeconds = self.workDuration; // 25 menit kerja
-      [self.window setTitle:@"Pomodoro Timer - Work"];
-    }
-
-    self.remainingSeconds = self.totalSeconds;
+    // Update UI untuk break session
     [self.progressBar setMaxValue:(double)self.totalSeconds];
     [self.progressBar setDoubleValue:(double)self.remainingSeconds];
+    [self updateUI];
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Work session completed!";
+    alert.informativeText =
+        [NSString stringWithFormat:@"Time for a %d second break",
+                                   (int)self.breakDuration];
+    [alert addButtonWithTitle:@"Start Break"];
+
+    [alert beginSheetModalForWindow:self.window
+                  completionHandler:^(NSModalResponse returnCode) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                      NSLog(@"Starting BREAK session - Duration: %ld seconds",
+                            (long)self.breakDuration);
+                      [self startTimer];
+                    });
+                  }];
+
+  } else {
+    // Selesai sesi break -> switch ke work session
+    NSLog(@"Break session completed, switching to work session");
+
+    // PASTIKAN workDuration tidak 0 - set ulang jika perlu
+    if (self.workDuration == 0) {
+      NSLog(@"WARNING: workDuration is 0, setting to default 60 seconds");
+      self.workDuration = 60; // Force set ke 60 detik
+    }
+
+    self.isWorkSession = YES;
+    self.totalSeconds = self.workDuration;
+    self.remainingSeconds = self.workDuration;
+
+    // Update UI untuk work session
+    [self.progressBar setMaxValue:(double)self.totalSeconds];
+    [self.progressBar setDoubleValue:(double)self.remainingSeconds];
+    [self updateUI];
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Break is over!";
+    alert.informativeText =
+        [NSString stringWithFormat:@"Time to work for %d seconds",
+                                   (int)self.workDuration];
+    [alert addButtonWithTitle:@"Start Work"];
+
+    [alert beginSheetModalForWindow:self.window
+                  completionHandler:^(NSModalResponse returnCode) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                      NSLog(@"Starting WORK session - Duration: %ld seconds",
+                            (long)self.workDuration);
+                      [self startTimer];
+                    });
+                  }];
   }
+}
+- (void)updateUI {
+  NSString *sessionType = self.isWorkSession ? @"Work" : @"Break";
+  NSInteger minutes = self.remainingSeconds / 60;
+  NSInteger seconds = self.remainingSeconds % 60;
+
+  self.timeLabel.stringValue =
+      [NSString stringWithFormat:@"%@: %02ld:%02ld", sessionType, (long)minutes,
+                                 (long)seconds];
+
+  // Update progress bar
+  [self.progressBar setDoubleValue:(double)self.remainingSeconds];
+
+  // Update window title
+  NSString *title =
+      [NSString stringWithFormat:@"Pomodoro Timer - %@", sessionType];
+  [self.window setTitle:title];
+}
+
+- (void)initializeDefaultValues {
+  // Set nilai default jika belum ada
+  if (self.workDuration == 0) {
+    self.workDuration = 1 * 60; // 1 menit untuk testing
+  }
+  if (self.breakDuration == 0) {
+    self.breakDuration = 30; // 30 detik untuk testing
+  }
+
+  NSLog(@"Default values initialized - Work: %ld, Break: %ld",
+        (long)self.workDuration, (long)self.breakDuration);
+}
+
+// Method untuk debug nilai saat ini
+- (void)logCurrentValues {
+  NSLog(@"Current values - Work: %ld seconds, Break: %ld seconds, "
+        @"isWorkSession: %@, remainingSeconds: %ld",
+        (long)self.workDuration, (long)self.breakDuration,
+        self.isWorkSession ? @"YES" : @"NO", (long)self.remainingSeconds);
+}
+
+- (void)changeSessionMode:(NSPopUpButton *)sender {
+  NSString *selected = sender.titleOfSelectedItem;
+
+  if ([selected isEqualToString:@"25 / 5"]) {
+    self.workDuration = 1 * 60; // Testing: 1 menit
+    self.breakDuration = 30;    // Testing: 30 detik
+  } else if ([selected isEqualToString:@"50 / 10"]) {
+    self.workDuration = 50 * 60;
+    self.breakDuration = 10 * 60;
+  }
+
+  // reset timer ke mode baru
+  self.isWorkSession = YES;
+  self.totalSeconds = self.workDuration;
+  self.remainingSeconds = self.totalSeconds;
+
+  [self.timeLabel setStringValue:[self formatTime:self.remainingSeconds]];
+  [self.progressBar setMaxValue:(double)self.totalSeconds];
+  [self.progressBar setDoubleValue:(double)self.remainingSeconds];
+
+  NSString *title =
+      [NSString stringWithFormat:@"Pomodoro Timer - Work (%@)", selected];
+  [self.window setTitle:title];
+
+  NSLog(@"Session mode changed to %@ - Work: %ld, Break: %ld", selected,
+        (long)self.workDuration, (long)self.breakDuration);
 }
 
 #pragma mark - Helper
@@ -416,9 +541,6 @@
   [[UNUserNotificationCenter currentNotificationCenter]
       addNotificationRequest:request
        withCompletionHandler:nil];
-
-  // Ganti status sesi
-  self.isWorkSession = !self.isWorkSession;
 }
 
 @end
