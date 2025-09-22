@@ -17,7 +17,7 @@
 @property(assign) BOOL isRunning;
 @property(assign) NSInteger totalSeconds;
 @property(assign) NSInteger remainingSeconds;
-@property(strong) AVAudioPlayer *rainPlayer;
+@property(strong) AVAudioPlayer *soundType;
 @property(assign) NSInteger workDuration;  // durasi kerja dalam detik
 @property(assign) NSInteger breakDuration; // durasi istirahat dalam detik
 
@@ -100,7 +100,7 @@
   [self.resetButton setAction:@selector(resetTimer)];
   [self.window.contentView addSubview:self.resetButton];
 
-  [self setupRainSound];
+  [self setupSoundWithType:SoundTypeWork];
   // === Minta izin notifikasi ===
   UNUserNotificationCenter *center =
       [UNUserNotificationCenter currentNotificationCenter];
@@ -242,27 +242,40 @@
   [self.window endSheet:self.settingsWindow];
 }
 
-#pragma mark - Rain Sound Setup
-- (void)setupRainSound {
-  NSString *path = [[NSBundle mainBundle] pathForResource:@"rain"
+typedef NS_ENUM(NSInteger, SoundType) { SoundTypeBreak, SoundTypeWork };
+
+#pragma setup sound
+- (void)setupSoundWithType:(SoundType)SoundType {
+  NSString *fileName;
+
+  switch (SoundType) {
+  case SoundTypeBreak:
+    fileName = @"alarm-clock";
+    break;
+  case SoundTypeWork:
+    fileName = @"fireplace";
+    break;
+  }
+
+  NSString *path = [[NSBundle mainBundle] pathForResource:fileName
                                                    ofType:@"mp3"];
   if (!path) {
-    NSLog(@"Rain sound file not found!");
+    NSLog(@"Sound file %@.mp3 not found!", fileName);
     return;
   }
 
   NSURL *url = [NSURL fileURLWithPath:path];
   NSError *error = nil;
-  self.rainPlayer = [[AVAudioPlayer alloc] initWithContentsOfURL:url
-                                                           error:&error];
+  self.soundType = [[AVAudioPlayer alloc] initWithContentsOfURL:url
+                                                          error:&error];
 
   if (error) {
-    NSLog(@"Error loading rain sound: %@", error.localizedDescription);
+    NSLog(@"Error loading %@ sound: %@", fileName, error.localizedDescription);
     return;
   }
 
-  self.rainPlayer.numberOfLoops = -1; // Looping tak terbatas
-  [self.rainPlayer prepareToPlay];
+  self.soundType.numberOfLoops = -1;
+  [self.soundType prepareToPlay];
 }
 
 #pragma mark - Timer Logic
@@ -281,14 +294,14 @@
   [self.pauseButton setEnabled:YES];
 
   // jika player belum di setup, siapkan dulu
-  if (!self.rainPlayer) {
-    [self setupRainSound];
+  if (!self.soundType) {
+    [self setupSoundWithType:SoundTypeWork];
   }
 
   // Mainkan hujan
-  if (self.rainPlayer && !self.rainPlayer.isPlaying) {
-    self.rainPlayer.volume = 1.0;
-    [self.rainPlayer play];
+  if (self.soundType && !self.soundType.isPlaying) {
+    self.soundType.volume = 1.0;
+    [self.soundType play];
     NSLog(@"Rain sound started...");
   }
 
@@ -319,8 +332,8 @@
   self.timer = nil;
 
   // Hentikan hujan saat pause
-  if (self.rainPlayer.isPlaying) {
-    [self.rainPlayer stop];
+  if (self.soundType.isPlaying) {
+    [self.soundType stop];
     NSLog(@"Rain sound stopped on pause...");
   }
 }
@@ -357,8 +370,8 @@
   self.isRunning = NO;
 
   // Hentikan suara hujan
-  if (self.rainPlayer.isPlaying) {
-    [self.rainPlayer stop];
+  if (self.soundType && self.soundType.isPlaying) {
+    [self.soundType stop];
     NSLog(@"Rain sound stopped...");
   }
 
@@ -373,78 +386,114 @@
         (long)self.workDuration, (long)self.breakDuration,
         self.isWorkSession ? @"YES" : @"NO");
 
-  // PERBAIKAN: Logika switching yang lebih jelas
   if (self.isWorkSession) {
-    // Selesai sesi kerja -> switch ke break session
-    NSLog(@"Work session completed, switching to break session");
-
-    // PASTIKAN breakDuration tidak 0 - set ulang jika perlu
-    if (self.breakDuration == 0) {
-      NSLog(@"WARNING: breakDuration is 0, setting to default 30 seconds");
-      self.breakDuration = 30; // Force set ke 30 detik
-    }
-
-    self.isWorkSession = NO;
-    self.totalSeconds = self.breakDuration;
-    self.remainingSeconds = self.breakDuration;
-
-    // Update UI untuk break session
-    [self.progressBar setMaxValue:(double)self.totalSeconds];
-    [self.progressBar setDoubleValue:(double)self.remainingSeconds];
-    [self updateUI];
-
-    NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Work session completed!";
-    alert.informativeText =
-        [NSString stringWithFormat:@"Time for a %d second break",
-                                   (int)self.breakDuration];
-    [alert addButtonWithTitle:@"Start Break"];
-
-    [alert beginSheetModalForWindow:self.window
-                  completionHandler:^(NSModalResponse returnCode) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                      NSLog(@"Starting BREAK session - Duration: %ld seconds",
-                            (long)self.breakDuration);
-                      [self startTimer];
-                    });
-                  }];
-
+    [self switchToBreakSession];
   } else {
-    // Selesai sesi break -> switch ke work session
-    NSLog(@"Break session completed, switching to work session");
-
-    // PASTIKAN workDuration tidak 0 - set ulang jika perlu
-    if (self.workDuration == 0) {
-      NSLog(@"WARNING: workDuration is 0, setting to default 60 seconds");
-      self.workDuration = 60; // Force set ke 60 detik
-    }
-
-    self.isWorkSession = YES;
-    self.totalSeconds = self.workDuration;
-    self.remainingSeconds = self.workDuration;
-
-    // Update UI untuk work session
-    [self.progressBar setMaxValue:(double)self.totalSeconds];
-    [self.progressBar setDoubleValue:(double)self.remainingSeconds];
-    [self updateUI];
-
-    NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Break is over!";
-    alert.informativeText =
-        [NSString stringWithFormat:@"Time to work for %d seconds",
-                                   (int)self.workDuration];
-    [alert addButtonWithTitle:@"Start Work"];
-
-    [alert beginSheetModalForWindow:self.window
-                  completionHandler:^(NSModalResponse returnCode) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                      NSLog(@"Starting WORK session - Duration: %ld seconds",
-                            (long)self.workDuration);
-                      [self startTimer];
-                    });
-                  }];
+    [self switchToWorkSession];
   }
 }
+
+- (void)switchToBreakSession {
+
+  // PASTIKAN breakDuration tidak 0
+  if (self.breakDuration == 0) {
+    self.breakDuration = 30;
+  }
+
+  self.isWorkSession = NO;
+  self.totalSeconds = self.breakDuration;
+  self.remainingSeconds = self.breakDuration;
+
+  // Hentikan semua sound sebelumnya
+  if (self.soundType) {
+    [self.soundType stop];
+    self.soundType = nil;
+  }
+
+  // Update UI untuk break session
+  [self.progressBar setMaxValue:(double)self.totalSeconds];
+  [self.progressBar setDoubleValue:(double)self.remainingSeconds];
+  [self updateUI];
+
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.messageText = @"Work session completed!";
+  alert.informativeText = [NSString
+      stringWithFormat:@"Time for a %d second break", (int)self.breakDuration];
+  [alert addButtonWithTitle:@"Start Break"];
+
+  // 🔥 PUTAR ALARM HANYA UNTUK ALERT
+  if (!self.isWorkSession) {
+    [self setupSoundWithType:SoundTypeBreak];
+    if (self.soundType) {
+      self.soundType.numberOfLoops = 0; // 🔥 HANYA SEKALI
+      self.soundType.volume = 1.0;
+      [self.soundType play];
+    }
+  }
+
+  [alert beginSheetModalForWindow:self.window
+                completionHandler:^(NSModalResponse returnCode) {
+                  dispatch_async(dispatch_get_main_queue(), ^{
+                    if (self.soundType && self.soundType.isPlaying) {
+                      [self.soundType stop];
+                      self.soundType = nil;
+                    }
+                    [self startTimer];
+                  });
+                }];
+}
+
+- (void)switchToWorkSession {
+  NSLog(@"Break session completed, switching to work session");
+
+  // PASTIKAN workDuration tidak 0
+  if (self.workDuration == 0) {
+    NSLog(@"WARNING: workDuration is 0, setting to default 60 seconds");
+    self.workDuration = 60;
+  }
+
+  self.isWorkSession = YES;
+  self.totalSeconds = self.workDuration;
+  self.remainingSeconds = self.workDuration;
+
+  // Hentikan semua sound
+  if (self.soundType) {
+    [self.soundType stop];
+    self.soundType = nil;
+  }
+
+  // Update UI untuk work session
+  [self.progressBar setMaxValue:(double)self.totalSeconds];
+  [self.progressBar setDoubleValue:(double)self.remainingSeconds];
+  [self updateUI];
+
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.messageText = @"Break is over!";
+  alert.informativeText = [NSString
+      stringWithFormat:@"Time to work for %d seconds", (int)self.workDuration];
+  [alert addButtonWithTitle:@"Start Work"];
+
+  [alert beginSheetModalForWindow:self.window
+                completionHandler:^(NSModalResponse returnCode) {
+                  dispatch_async(dispatch_get_main_queue(), ^{
+                    NSLog(@"Starting WORK session - Duration: %ld seconds",
+                          (long)self.workDuration);
+
+                    // 🔥 Setup dan putar sound untuk work session (jika
+                    // diinginkan)
+                    [self setupSoundWithType:SoundTypeWork];
+                    if (self.soundType) {
+                      self.soundType.numberOfLoops =
+                          -1; // Loop selama work session
+                      [self.soundType play];
+                      NSLog(@"🌧️ Work session sound started");
+                    }
+
+                    [self startTimer];
+                  });
+                }];
+}
+
 - (void)updateUI {
   NSString *sessionType = self.isWorkSession ? @"Work" : @"Break";
   NSInteger minutes = self.remainingSeconds / 60;
@@ -542,7 +591,6 @@
       addNotificationRequest:request
        withCompletionHandler:nil];
 }
-
 @end
 
 #pragma mark - Main
