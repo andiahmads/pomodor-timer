@@ -988,6 +988,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
   NSMenuItem *musicItem = [[NSMenuItem alloc] initWithTitle:@"Music" action:nil keyEquivalent:@""];
   NSMenu *musicMenu = [[NSMenu alloc] initWithTitle:@"Music"];
   [musicMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Sound Mixer..." action:@selector(openMusicMixer) keyEquivalent:@""]];
+  [musicMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Download Sounds..." action:@selector(openSoundDownloader) keyEquivalent:@""]];
   [musicMenu addItem:[NSMenuItem separatorItem]];
   for (SoundLayer *layer in self.soundLayers) {
     NSMenuItem *s = [[NSMenuItem alloc] initWithTitle:layer.name action:@selector(toggleSoundByName:) keyEquivalent:@""];
@@ -1038,6 +1039,8 @@ typedef NS_ENUM(NSInteger, Achievement) {
     img = [img imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:14 weight:NSFontWeightMedium]];
     self.statusItem.button.image = img;
   }
+  [self.statusItem.button setAction:@selector(startPauseToggle)];
+  [self.statusItem.button setTarget:self];
 
   NSMenu *m = [[NSMenu alloc] init];
 
@@ -1109,7 +1112,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
   if (streakItem) streakItem.title = [NSString stringWithFormat:@"🔥 Day %ld streak", (long)self.currentStreak];
 
   if (@available(macOS 11.0, *)) {
-    NSString *symbolName = self.isRunning ? @"play.circle.fill" : @"timer";
+    NSString *symbolName = self.isRunning ? @"pause.circle.fill" : @"timer";
     NSImage *img = [NSImage imageWithSystemSymbolName:symbolName accessibilityDescription:@"Timer"];
     img = [img imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:14 weight:NSFontWeightMedium]];
     self.statusItem.button.image = img;
@@ -1722,13 +1725,13 @@ typedef NS_ENUM(NSInteger, Achievement) {
         NSButton *playBtn = [NSButton buttonWithTitle:@"▶ Play" target:self action:@selector(playSoundFromDownloader:)];
         playBtn.bezelStyle = NSBezelStyleRounded;
         playBtn.frame = NSMakeRect(310, 6, 80, 26);
-        playBtn.representedObject = filename;
+        [playBtn setValue:filename forKey:@"representedObject"];
         [rowBox.contentView addSubview:playBtn];
       } else {
         NSButton *downloadBtn = [NSButton buttonWithTitle:@"⬇ Download" target:self action:@selector(openPixabaySearch:)];
         downloadBtn.bezelStyle = NSBezelStyleRounded;
         downloadBtn.frame = NSMakeRect(200, 6, 100, 26);
-        downloadBtn.representedObject = sound[@"url"];
+        [downloadBtn setValue:sound[@"url"] forKey:@"representedObject"];
         [rowBox.contentView addSubview:downloadBtn];
       }
 
@@ -1746,7 +1749,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
 }
 
 - (void)openPixabaySearch:(NSButton *)sender {
-  NSString *url = sender.representedObject;
+  NSString *url = [sender valueForKey:@"representedObject"];
   if (url) {
     NSURL *searchURL = [NSURL URLWithString:url];
     [[NSWorkspace sharedWorkspace] openURL:searchURL];
@@ -1754,7 +1757,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
 }
 
 - (void)playSoundFromDownloader:(NSButton *)sender {
-  NSString *filename = sender.representedObject;
+  NSString *filename = [sender valueForKey:@"representedObject"];
   if (filename) {
     NSString *path = [self soundPathForFile:filename];
     if (path) {
