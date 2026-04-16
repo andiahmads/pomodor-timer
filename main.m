@@ -1235,7 +1235,14 @@ typedef NS_ENUM(NSInteger, Achievement) {
   [a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
     dispatch_async(dispatch_get_main_queue(), ^{
       if (self.soundType.playing) [self.soundType stop];
-      if (r == NSAlertFirstButtonReturn) [self startTimer];
+      if (r == NSAlertFirstButtonReturn) {
+        [self startTimer];
+      } else {
+        // Skip / More Break: go to next work session immediately
+        if (!self.isWorkSession) {
+          [self switchToWork];
+        }
+      }
     });
   }];
 }
