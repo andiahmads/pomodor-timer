@@ -1060,11 +1060,13 @@ typedef NS_ENUM(NSInteger, Achievement) {
   [m addItem:[NSMenuItem separatorItem]];
 
   NSMenuItem *startItem = [[NSMenuItem alloc] initWithTitle:@"Start" action:@selector(startTimer) keyEquivalent:@"s"];
+  startItem.tag = 991;
   [startItem setTarget:self];
   if (@available(macOS 11.0, *)) startItem.image = [NSImage imageWithSystemSymbolName:@"play.fill" accessibilityDescription:@"Start"];
   [m addItem:startItem];
 
   NSMenuItem *pauseItem = [[NSMenuItem alloc] initWithTitle:@"Pause" action:@selector(pauseTimer) keyEquivalent:@"p"];
+  pauseItem.tag = 992;
   [pauseItem setTarget:self];
   if (@available(macOS 11.0, *)) pauseItem.image = [NSImage imageWithSystemSymbolName:@"pause.fill" accessibilityDescription:@"Pause"];
   [m addItem:pauseItem];
@@ -1110,6 +1112,12 @@ typedef NS_ENUM(NSInteger, Achievement) {
 
   NSMenuItem *streakItem = [self.statusItem.menu itemWithTag:998];
   if (streakItem) streakItem.title = [NSString stringWithFormat:@"🔥 Day %ld streak", (long)self.currentStreak];
+
+  NSMenuItem *startItem = [self.statusItem.menu itemWithTag:991];
+  if (startItem) startItem.hidden = self.isRunning;
+
+  NSMenuItem *pauseItem = [self.statusItem.menu itemWithTag:992];
+  if (pauseItem) pauseItem.hidden = !self.isRunning;
 
   if (@available(macOS 11.0, *)) {
     NSString *symbolName = self.isRunning ? @"pause.circle.fill" : @"timer";
