@@ -105,6 +105,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
 @property(strong) NSMutableArray<PomodoroTask *> *tasks;
 @property(strong) NSWindow *statsWindow;
 @property(strong) NSWindow *musicWindow;
+@property(strong) NSWindow *soundsWindow;
 @property(strong) NSWindow *analyticsWindow;
 @property(strong) NSMutableArray<PomodoroRecord *> *records;
 @property(assign) NSInteger todayCompletedPomodoros;
@@ -1234,6 +1235,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
   NSString *type = self.isWorkSession ? @"Work" : @"Break";
   self.timeLabel.stringValue = [NSString stringWithFormat:@"%@: %02ld:%02ld", type, (long)m, (long)s];
   self.progressBar.doubleValue = self.remainingSeconds;
+  if (self.startButton) self.startButton.title = self.isRunning ? @"⏸  Pause" : @"▶  Start";
   [self updateStatusBar];
   [self updateMiniPlayer];
 }
@@ -1246,15 +1248,33 @@ typedef NS_ENUM(NSInteger, Achievement) {
 }
 
 #pragma mark - Sound (#12)
+- (NSString *)soundsDirectory {
+  NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
+  NSString *soundsPath = [bundlePath stringByAppendingPathComponent:@"Contents/Resources/Sounds"];
+  [[NSFileManager defaultManager] createDirectoryAtPath:soundsPath withIntermediateDirectories:YES attributes:nil error:nil];
+  return soundsPath;
+}
+
 - (void)setupSoundWithType:(SoundType)type {
   NSString *fn = type == SoundTypeBreak ? @"alarm-clock" : @"fireplace";
   NSString *path = [[NSBundle mainBundle] pathForResource:fn ofType:@"mp3"];
+  if (!path) {
+    path = [[self soundsDirectory] stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.mp3", fn]];
+  }
   if (!path) return;
   NSError *e = nil;
   self.soundType = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL fileURLWithPath:path] error:&e];
   if (e) { NSLog(@"Sound error: %@", e); return; }
   self.soundType.numberOfLoops = -1;
   [self.soundType prepareToPlay];
+}
+
+- (NSString *)soundPathForFile:(NSString *)filename {
+  NSString *path = [[NSBundle mainBundle] pathForResource:filename ofType:@"mp3"];
+  if (!path) {
+    path = [[self soundsDirectory] stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.mp3", filename]];
+  }
+  return path;
 }
 
 - (void)toggleSound:(NSButton *)sender {
@@ -1264,7 +1284,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
     layer.isPlaying = !layer.isPlaying;
 
     if (layer.isPlaying) {
-      NSString *path = [[NSBundle mainBundle] pathForResource:layer.filename ofType:@"mp3"];
+      NSString *path = [self soundPathForFile:layer.filename];
       if (path) {
         NSError *e = nil;
         layer.player = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL fileURLWithPath:path] error:&e];
@@ -1285,7 +1305,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
     if ([layer.name isEqualToString:name]) {
       layer.isPlaying = !layer.isPlaying;
       if (layer.isPlaying) {
-        NSString *path = [[NSBundle mainBundle] pathForResource:layer.filename ofType:@"mp3"];
+        NSString *path = [self soundPathForFile:layer.filename];
         if (path) {
           NSError *e = nil;
           layer.player = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL fileURLWithPath:path] error:&e];
@@ -1363,7 +1383,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
     layer.isPlaying = sender.state == NSControlStateValueOn;
 
     if (layer.isPlaying) {
-      NSString *path = [[NSBundle mainBundle] pathForResource:layer.filename ofType:@"mp3"];
+      NSString *path = [self soundPathForFile:layer.filename];
       if (path) {
         NSError *e = nil;
         layer.player = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL fileURLWithPath:path] error:&e];
@@ -1630,6 +1650,125 @@ typedef NS_ENUM(NSInteger, Achievement) {
 
 - (void)cancelSettings {
   [self.window endSheet:self.settingsWindow];
+}
+
+#pragma mark - Sound Downloads
+- (void)openSoundDownloader {
+  if (!self.soundsWindow) {
+    self.soundsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 450, 380)
+                                              styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
+                                                backing:NSBackingStoreBuffered defer:NO];
+    self.soundsWindow.title = @"🎵 Download Focus Sounds";
+    [self.soundsWindow center];
+
+    NSVisualEffectView *bg = [[NSVisualEffectView alloc] initWithFrame:self.soundsWindow.contentView.bounds];
+    bg.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    bg.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    bg.material = NSVisualEffectMaterialHUDWindow;
+    bg.state = NSVisualEffectStateActive;
+    [self.soundsWindow.contentView addSubview:bg];
+
+    NSBox *contentBox = [[NSBox alloc] initWithFrame:NSMakeRect(10, 10, 430, 360)];
+    contentBox.boxType = NSBoxCustom;
+    contentBox.cornerRadius = 16;
+    contentBox.fillColor = [[NSColor windowBackgroundColor] colorWithAlphaComponent:0.9];
+    contentBox.borderWidth = 0;
+    [bg addSubview:contentBox];
+
+    NSTextField *title = [NSTextField labelWithString:@"Download Free Focus Sounds"];
+    title.font = [NSFont systemFontOfSize:16 weight:NSFontWeightBold];
+    title.frame = NSMakeRect(15, 315, 400, 24);
+    [contentBox.contentView addSubview:title];
+
+    NSTextField *desc = [NSTextField labelWithString:@"Click download to get sounds from Pixabay (royalty-free)"];
+    desc.font = [NSFont systemFontOfSize:11];
+    desc.textColor = [NSColor secondaryLabelColor];
+    desc.frame = NSMakeRect(15, 295, 400, 16);
+    [contentBox.contentView addSubview:desc];
+
+    NSArray *sounds = @[
+      @{@"name": @"🌧️ Rain", @"file": @"rain", @"url": @"https://pixabay.com/music/search/?q=rain+sounds&duration=0-600"},
+      @{@"name": @"🌲 Forest", @"file": @"forest", @"url": @"https://pixabay.com/music/search/?q=forest+sounds+nature"},
+      @{@"name": @"☕ Cafe", @"file": @"cafe", @"url": @"https://pixabay.com/music/search/?q=cafe+ambience"},
+      @{@"name": @"🌊 Ocean", @"file": @"ocean", @"url": @"https://pixabay.com/music/search/?q=ocean+waves"},
+      @{@"name": @"🔥 Fireplace", @"file": @"fireplace", @"url": @"https://pixabay.com/music/search/?q=fireplace+crackling"},
+      @{@"name": @"📻 White Noise", @"file": @"whitenoise", @"url": @"https://pixabay.com/music/search/?q=white+noise"}
+    ];
+
+    NSInteger y = 260;
+    for (NSDictionary *sound in sounds) {
+      NSString *filename = sound[@"file"];
+      BOOL downloaded = [[NSFileManager defaultManager] fileExistsAtPath:[[self soundsDirectory] stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.mp3", filename]]];
+
+      NSBox *rowBox = [[NSBox alloc] initWithFrame:NSMakeRect(15, y, 400, 38)];
+      rowBox.boxType = NSBoxCustom;
+      rowBox.cornerRadius = 10;
+      rowBox.fillColor = [[NSColor controlBackgroundColor] colorWithAlphaComponent:0.5];
+      rowBox.borderWidth = 0;
+      [contentBox.contentView addSubview:rowBox];
+
+      NSTextField *nameLabel = [NSTextField labelWithString:sound[@"name"]];
+      nameLabel.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
+      nameLabel.frame = NSMakeRect(12, 10, 180, 20);
+      [rowBox.contentView addSubview:nameLabel];
+
+      if (downloaded) {
+        NSTextField *statusLabel = [NSTextField labelWithString:@"✅ Downloaded"];
+        statusLabel.font = [NSFont systemFontOfSize:11];
+        statusLabel.textColor = [NSColor systemGreenColor];
+        statusLabel.frame = NSMakeRect(200, 12, 100, 16);
+        [rowBox.contentView addSubview:statusLabel];
+
+        NSButton *playBtn = [NSButton buttonWithTitle:@"▶ Play" target:self action:@selector(playSoundFromDownloader:)];
+        playBtn.bezelStyle = NSBezelStyleRounded;
+        playBtn.frame = NSMakeRect(310, 6, 80, 26);
+        playBtn.representedObject = filename;
+        [rowBox.contentView addSubview:playBtn];
+      } else {
+        NSButton *downloadBtn = [NSButton buttonWithTitle:@"⬇ Download" target:self action:@selector(openPixabaySearch:)];
+        downloadBtn.bezelStyle = NSBezelStyleRounded;
+        downloadBtn.frame = NSMakeRect(200, 6, 100, 26);
+        downloadBtn.representedObject = sound[@"url"];
+        [rowBox.contentView addSubview:downloadBtn];
+      }
+
+      y -= 48;
+    }
+
+    NSTextField *footer = [NSTextField labelWithString:@"Tip: Download 30-60 second loops for best experience"];
+    footer.font = [NSFont systemFontOfSize:10];
+    footer.textColor = [NSColor tertiaryLabelColor];
+    footer.frame = NSMakeRect(15, 5, 400, 14);
+    [contentBox.contentView addSubview:footer];
+  }
+
+  [self.soundsWindow makeKeyAndOrderFront:nil];
+}
+
+- (void)openPixabaySearch:(NSButton *)sender {
+  NSString *url = sender.representedObject;
+  if (url) {
+    NSURL *searchURL = [NSURL URLWithString:url];
+    [[NSWorkspace sharedWorkspace] openURL:searchURL];
+  }
+}
+
+- (void)playSoundFromDownloader:(NSButton *)sender {
+  NSString *filename = sender.representedObject;
+  if (filename) {
+    NSString *path = [self soundPathForFile:filename];
+    if (path) {
+      NSError *e = nil;
+      AVAudioPlayer *player = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL fileURLWithPath:path] error:&e];
+      if (!e) {
+        player.numberOfLoops = -1;
+        [player play];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+          [player stop];
+        });
+      }
+    }
+  }
 }
 
 #pragma mark - Tasks

@@ -3,7 +3,7 @@
 Timer Pomodoro native macOS yang ringan dan bebas gangguan, dibangun dengan Cocoa (AppKit) dan Objective-C.
 
 <p align="center">
-<a href="https://andiahmads.github.io/pomodoro-timer/"><img src="./assets/new-feature.png"></a>
+<a href="https://andiahmads.github.io/pomodoro-timer/"><img src="./assets/new_feature.png"></a>
 </p>
 
 <p align="center">
