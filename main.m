@@ -1281,6 +1281,7 @@ typedef NS_ENUM(NSInteger, Achievement) {
   }
   if (!path) return;
   NSError *e = nil;
+  if (self.soundType) { [self.soundType stop]; self.soundType = nil; }
   self.soundType = [[AVAudioPlayer alloc] initWithContentsOfURL:[NSURL fileURLWithPath:path] error:&e];
   if (e) { NSLog(@"Sound error: %@", e); return; }
   self.soundType.numberOfLoops = -1;
